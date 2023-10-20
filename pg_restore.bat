@@ -32,6 +32,10 @@ SET BACKUP_PATH=%BACKUP_PATH:\=\\%
 
 pause
 
+createdb %DB_CONNECT% %DB_NAME%
+
+pause
+
 @pg_restore.exe --verbose %DB_CONNECT% --jobs=8 --clean --format=d --dbname=%DB_NAME% %BACKUP_PATH%
 @echo.
 @psql.exe %DB_CONNECT% --command "COPY public.config from '%BACKUP_PATH%\\config.table' WITH BINARY;" --dbname="%DB_NAME%"
