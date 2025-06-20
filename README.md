@@ -18,6 +18,7 @@ Automate PostgreSQL backup
 
 Установить исполнение планировщиком задач по таймеру. Прописать свои переменные для выполнения резервного копирования баз, перечисленных в файле pg_dump.lib.
 
+
 Запуск без параметров — резервное копирование баз из pg_dump.conf
 
 ```
@@ -29,3 +30,17 @@ Automate PostgreSQL backup
 
 
 Формат копии - directory. Параллелизм устанавливается переменной PGJOBS.
+
+
+Раздельное хранение автоматических и ручных копий.
+```
+BACKUP_DIRECTORY_AUTO="/netbackup"
+BACKUP_DIRECTORY_MANUAL="/netbackup/_manual"
+```
+
+
+Можно запускать с Windows 10+ хоста через bat файл командой 
+```
+ssh username@pg-host -t "/opt/scripts/pg_tools/pg_dump.sh --manual; bash -l $$ ~."
+pause
+```
