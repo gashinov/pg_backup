@@ -1,0 +1,84 @@
+#!/bin/bash
+
+# Формат переменных даты и времени
+DATE=$(date '+%Y%m%d')
+TIME=$(date '+%H%M%S')
+
+# --- Параметры подключения к PostgreSQL ---
+PGHOST="localhost"
+PGPORT="5432"
+PGUSER="postgres"
+PGJOBS="16"
+PGPASSWORD="postgres"
+
+# Формируем строку подключения
+DB_CONNECT="--host $PGHOST --port $PGPORT --username $PGUSER"
+# Формируем строку запроса имён
+DB_BASES_QUERY="--quiet --no-align --tuples-only --dbname=postgres"
+# Опции для pg_dump
+DB_DUMP_OPTIONS="--jobs=$PGJOBS --format directory --blobs --exclude-table-data=config --exclude-table-data=configsave --verbose --file"
+
+# --- Каталоги и имена файлов ---
+# не используем слеши в конце!
+BACKUP_DIRECTORY_AUTO="/netbackup"
+BACKUP_DIRECTORY_MANUAL="/netbackup/_manual"
+
+# --- Логирование и ротация логов ---
+# Папка и файл логов
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SCRIPT_CONF="$SCRIPT_DIR/pg_dump.conf"
+LOG_DIR="$SCRIPT_DIR/logs"
+LOG_FILE="$LOG_DIR/backup_$DATE.log"
+
+# Создаем папку логов если нет
+mkdir -p "$LOG_DIR"
+
+# Функция логирования с таймстампом и выводом на экран + файл
+log() {
+    echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+}
+
+# Ротация логов: удаляем логи старше 7 дней
+rotate_logs() {
+    find "$LOG_DIR" -type f -name 'backup_*.log' -mtime +7 -exec rm -f {} \;
+}
+
+# --- Настройки вывода списка баз ---
+columns=2
+spacing="   "  # Отступ между колонками (3 пробела)
+
+# --- Telegram уведомления ---
+# Укажите токен бота и chat_id
+TELEGRAM_BOT_TOKEN="123456789:ABCDEFyourBotTokenHere"
+TELEGRAM_CHAT_ID="-1001234567890"
+
+# Функция отправки уведомления в Telegram
+send_telegram() {
+    local MESSAGE="$1"
+    curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TELEGRAM_CHAT_ID}" \
+        -d text="$MESSAGE" \
+        -d parse_mode="Markdown" >/dev/null
+}
+
+# --- Функция резервного копирования базы ---
+run_backup_for() {
+    local DB_NAME=$1
+    local BACKUP_PATH=$2
+
+    # Строка с двойным слешем для psql
+    BACKUP_PATH_PSQL=$(echo "$BACKUP_PATH" | sed 's~/~\/\/~g')
+
+    # Создаем каталог для бэкапа
+    mkdir -p "$BACKUP_PATH"
+
+    # Запускаем pg_dump с опциями
+    pg_dump $DB_CONNECT $DB_DUMP_OPTIONS "$BACKUP_PATH" "$DB_NAME"
+    local dump_status=$?
+
+    # Экспортируем таблицы config и configsave в бинарном формате для обхода ограничений
+    psql $DB_CONNECT --command "\COPY public.config TO '$BACKUP_PATH_PSQL//config.table' WITH BINARY;" --dbname="$DB_NAME"
+    psql $DB_CONNECT --command "\COPY public.configsave TO '$BACKUP_PATH_PSQL//configsave.table' WITH BINARY;" --dbname="$DB_NAME"
+
+    return $dump_status
+}
